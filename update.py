@@ -5,7 +5,7 @@ import math
 import sqlite3
 import time
 import urllib.request
-from datetime import date, datetime
+from datetime import datetime
 
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -53,26 +53,29 @@ def obtain_num_days(code):
     return num_days
 
 
-def fetch_values_dataframe(url):
+def fetch_values_dataframe(code, i):
     """
     株価のページからデータフレームを取得する
     """
     df = pd.DataFrame([], columns=['open', 'high', 'low', 'close', 'volume'])
 
+    url = f'https://kabutan.jp/stock/kabuka?code={code}&page={i}'
     with urllib.request.urlopen(url) as res:
         soup = BeautifulSoup(res, 'html.parser')
+
+    idx = 0 if i == 1 else 1
 
     # 日付を取得
     v_date = soup.find_all("th", scope="row")
     v_date_list = [
-        v_date[i].find("time")["datetime"] for i in range(4, 33 + 1)
+        v_date[i].find("time")["datetime"] for i in range(4 + idx, len(v_date))
     ]
     v_date_df = pd.DataFrame({'date': v_date_list})
 
     # 株価を取得
     v_values = soup.find_all(id="stock_kabuka_table")[0].find_all("td")
     v_values_list = []
-    for j in range(0, len(v_values), 7):
+    for j in range(0 + idx * 7, len(v_values), 7):
         v_open = v_values[j].text
         v_high = v_values[j + 1].text
         v_low = v_values[j + 2].text
@@ -111,11 +114,8 @@ def fetch_stock_values(code):
     for i in range(1, pagenation + 1):
 
         # 株価のページからデータフレームを取得する
-        url = f'https://kabutan.jp/stock/kabuka?code={code}&page={i}'
-        values_df = fetch_values_dataframe(url)
+        values_df = fetch_values_dataframe(code, i)
         df = pd.concat([df, values_df], axis=0)
-
-    df = df.drop_duplicates()
 
     return df
 
@@ -134,6 +134,7 @@ def concat_df_and_make_distinct(df_new, code):
     df = df.drop_duplicates()
     df = df.sort_values('date')
     df = df.reset_index(drop=True)
+    df = df.dropna()
 
     return df
 
@@ -150,7 +151,7 @@ if __name__ == '__main__':
 
     for code in codes_df['code']:
 
-        # # 株価のデータフレームを取得する
+        # 株価のデータフレームを取得する
         values_df = fetch_stock_values(code)
         values_df = concat_df_and_make_distinct(values_df, code)
 
