@@ -104,7 +104,7 @@ def fetch_stock_values(code):
     num_days = obtain_num_days(code)
 
     # ページネーションの数を計算する
-    pagenation = math.ceil(num_days / 30)
+    pagenation = min(math.ceil(num_days / 30), 10)
 
     df = pd.DataFrame(
         [],
@@ -120,23 +120,29 @@ def fetch_stock_values(code):
     return df
 
 
-def concat_df_and_make_distinct(df_new, code):
+def create_inserted_dataframe(df_new, code):
     """
-    データベースに格納されているデータと新しく取得したデータを結合し、重複を削除する
+    データベースに挿入するデータフレームを作る
     """
-    query = f'select distinct * from \"{code}\" order by date desc;'
+    query = f'select distinct * from \"{code}\" order by date desc limit 1;'
     conn = sqlite3.connect('stocks.db')
     with conn:
         df_old = pd.read_sql_query(query, conn)
 
-    df = pd.concat([df_old, df_new], axis=0)
+    df_insert = pd.DataFrame(
+        [],
+        columns=['date', 'open', 'high', 'low', 'close', 'volume']
+    )
+    date_old_latest = datetime.strptime(df_old.iloc[0, 0], "%Y-%m-%d")
 
-    df = df.drop_duplicates()
-    df = df.sort_values('date')
-    df = df.reset_index(drop=True)
-    df = df.dropna()
+    if not df_new.empty:
+        for i in range(0, len(df_new)):
+            date_new_latest = datetime.strptime(df_new.iloc[i, 0], "%Y-%m-%d")
+            if date_new_latest == date_old_latest:
+                break
+            df_insert = pd.concat([df_new.iloc[i, :].to_frame().T, df_insert])
 
-    return df
+    return df_insert
 
 
 if __name__ == '__main__':
@@ -153,12 +159,12 @@ if __name__ == '__main__':
 
         # 株価のデータフレームを取得する
         values_df = fetch_stock_values(code)
-        values_df = concat_df_and_make_distinct(values_df, code)
+        values_df = create_inserted_dataframe(values_df, code)
 
         # データベースに格納する
         conn = sqlite3.connect('stocks.db')
         with conn:
-            values_df.to_sql(code, conn, if_exists='replace', index=False)
+            values_df.to_sql(code, conn, if_exists='append', index=False)
 
         bar.update(1)
         time.sleep(1)
