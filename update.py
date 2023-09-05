@@ -9,7 +9,8 @@ from datetime import datetime
 
 import pandas as pd
 from bs4 import BeautifulSoup
-from tqdm import tqdm
+
+# from tqdm import tqdm
 
 
 def load_codes_dataframe():
@@ -22,6 +23,18 @@ def load_codes_dataframe():
         df = pd.read_sql_query(query, conn)
 
     return df
+
+
+def delete_code(code):
+    """
+    上場廃止された銘柄をリストから削除する
+    """
+    query = f'delete from Symbols where code is \"{code}\";'
+    conn = sqlite3.connect('stocks.db')
+    with conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        conn.commit()
 
 
 def obtain_num_days(code):
@@ -42,8 +55,11 @@ def obtain_num_days(code):
     url = f'https://kabutan.jp/stock/kabuka?code={code}&page=1'
     with urllib.request.urlopen(url) as res:
         soup = BeautifulSoup(res, 'html.parser')
-    last_date = soup.find("table", class_="stock_kabuka0").find("time")[
-        "datetime"]
+    try:
+        last_date = soup.find("table", class_="stock_kabuka0").find("time")[
+            "datetime"]
+    except AttributeError:
+        return -1
     last_date_dt = datetime.strptime(last_date, '%Y-%m-%d')
     last_date_2 = last_date_dt.date()
 
@@ -103,19 +119,26 @@ def fetch_stock_values(code):
     # 差分日数を計算する
     num_days = obtain_num_days(code)
 
-    # ページネーションの数を計算する
-    pagenation = min(math.ceil(num_days / 30), 10)
-
     df = pd.DataFrame(
         [],
         columns=['date', 'open', 'high', 'low', 'close', 'volume']
     )
 
-    for i in range(1, pagenation + 1):
+    if num_days >= 0:
 
-        # 株価のページからデータフレームを取得する
-        values_df = fetch_values_dataframe(code, i)
-        df = pd.concat([df, values_df], axis=0)
+        # ページネーションの数を計算する
+        pagenation = min(math.ceil(num_days / 30), 10)
+
+        for i in range(1, pagenation + 1):
+
+            # 株価のページからデータフレームを取得する
+            values_df = fetch_values_dataframe(code, i)
+            df = pd.concat([df, values_df], axis=0)
+
+    else:
+
+        # 上場廃止された銘柄をリストから削除する
+        delete_code(code)
 
     return df
 
@@ -150,10 +173,10 @@ if __name__ == '__main__':
     # 銘柄コードのデータフレームを取得する
     codes_df = load_codes_dataframe()
 
-    # プログレスバーを定義
-    bar = tqdm(total=len(codes_df), dynamic_ncols=True,
-               iterable=True, leave=False)
-    bar.set_description('データを取得しています')
+    # # プログレスバーを定義
+    # bar = tqdm(total=len(codes_df), dynamic_ncols=True,
+    #            iterable=True, leave=False)
+    # bar.set_description('データを取得しています')
 
     for code in codes_df['code']:
 
@@ -161,10 +184,14 @@ if __name__ == '__main__':
         values_df = fetch_stock_values(code)
         values_df = create_inserted_dataframe(values_df, code)
 
-        # データベースに格納する
-        conn = sqlite3.connect('stocks.db')
-        with conn:
-            values_df.to_sql(code, conn, if_exists='append', index=False)
+        if not values_df.empty:
 
-        bar.update(1)
-        time.sleep(1)
+            # データベースに格納する
+            conn = sqlite3.connect('stocks.db')
+            with conn:
+                values_df.to_sql(code, conn, if_exists='append', index=False)
+
+            print(code)
+
+        # bar.update(1)
+        time.sleep(2)
