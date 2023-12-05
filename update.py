@@ -9,8 +9,7 @@ from datetime import datetime
 
 import pandas as pd
 from bs4 import BeautifulSoup
-
-# from tqdm import tqdm
+from tqdm import tqdm
 
 
 def load_codes_dataframe():
@@ -173,10 +172,10 @@ if __name__ == '__main__':
     # 銘柄コードのデータフレームを取得する
     codes_df = load_codes_dataframe()
 
-    # # プログレスバーを定義
-    # bar = tqdm(total=len(codes_df), dynamic_ncols=True,
-    #            iterable=True, leave=False)
-    # bar.set_description('データを取得しています')
+    # プログレスバーを定義
+    bar = tqdm(total=len(codes_df), dynamic_ncols=True,
+               iterable=True, leave=False)
+    bar.set_description('データを取得しています')
 
     for code in codes_df['code']:
 
@@ -191,7 +190,5 @@ if __name__ == '__main__':
             with conn:
                 values_df.to_sql(code, conn, if_exists='append', index=False)
 
-            print(code)
-
-        # bar.update(1)
+        bar.update(1)
         time.sleep(2)
